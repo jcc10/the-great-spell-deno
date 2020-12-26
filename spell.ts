@@ -4,6 +4,7 @@ import { NodeThread } from "./resources/node-thread.ts";
 import { ResourceManager } from "./resources/resource-manager.ts";
 
 export enum KINDS {
+    INVALID,
     BASIC,
     RECURSIVE
 }
@@ -11,6 +12,39 @@ export enum KINDS {
 export interface OptResources {
     nodeThread?: NodeThread;
     crystalBall: Resource;
+}
+
+export interface spellMetadata {
+    name: string;
+    kind: KINDS;
+    ending: RegExp;
+}
+
+const recursiveHeader = /\(([^\(\[\{\|\n]+)\|%\$\|!\|~\)/g;
+const basicHeader = /\[([^\(\[\{\|\n]+)\|%\$\|!\]/g;
+
+export function headerParser(header: string): spellMetadata{
+    let matches = recursiveHeader.exec(header);
+    if(matches && matches[1]){
+        return {
+            name: matches[1],
+            kind: KINDS.RECURSIVE,
+            ending: /\(\)/g,
+        }
+    }
+    matches = basicHeader.exec(header)
+    if(matches && matches[1]){
+        return {
+            name: matches[1],
+            kind: KINDS.BASIC,
+            ending: /\[\]/g,
+        }
+    }
+    return {
+        name: "",
+        kind: KINDS.INVALID,
+        ending: /./g
+    }
 }
 
 export class Spell{
@@ -21,11 +55,9 @@ export class Spell{
         this.lines = spell;
         this.spells = spellList;
         //Header sanity check should go here.
-        if(header[0] == "["){
-            this.kind = KINDS.BASIC;
-        } else if(header[0] == "("){
-            this.kind = KINDS.RECURSIVE;
-        } else {
+        const md = headerParser(header);
+        this.kind = md.kind;
+        if(this.kind == KINDS.INVALID) {
             throw new Explosion("Unknown kind of spell scribed!");
         }
     }
