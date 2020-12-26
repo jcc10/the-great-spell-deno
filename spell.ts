@@ -9,10 +9,7 @@ export enum KINDS {
     RECURSIVE
 }
 
-export interface OptResources {
-    nodeThread?: NodeThread;
-    crystalBall: Resource;
-}
+export type OptResources = (spellName: string, instance: number) => ResourceManager;
 
 export interface spellMetadata {
     name: string;
@@ -20,8 +17,8 @@ export interface spellMetadata {
     ending: RegExp;
 }
 
-const recursiveHeader = /\(([^\(\[\{\|\n]+)\|%\$\|!\|~\)/g;
-const basicHeader = /\[([^\(\[\{\|\n]+)\|%\$\|!\]/g;
+const recursiveHeader = /\(([^\(\[\{\|\n]+)\|\%\$\|\!\|\~\)/g;
+const basicHeader = /\[([^\(\[\{\|\n]+)\|\%\$\|\!\]/g;
 
 export function headerParser(header: string): spellMetadata{
     let matches = recursiveHeader.exec(header);
@@ -50,6 +47,7 @@ export function headerParser(header: string): spellMetadata{
 export class Spell{
     private lines: Array<string>;
     private spells: Map<string, Spell>;
+    private name: string;
     public readonly kind: KINDS;
     constructor(spell: Array<string>, spellList: Map<string, Spell>, header: string){
         this.lines = spell;
@@ -57,19 +55,18 @@ export class Spell{
         //Header sanity check should go here.
         const md = headerParser(header);
         this.kind = md.kind;
+        this.name = md.name;
         if(this.kind == KINDS.INVALID) {
             throw new Explosion("Unknown kind of spell scribed!");
         }
     }
 
-    private async runOnce(_fire: number, _water: number, _resources: OptResources, _earth?: number ): Promise<[number|null, number|null]>{
-        const resources = new ResourceManager(_fire, _water, _earth);
-        const thread = _resources.nodeThread ? _resources.nodeThread : new NodeThread();
-        resources.addResource("<", thread.left())
-        resources.addResource(">", thread.right())
-        if(_resources.crystalBall){
-            resources.addResource("?", _resources.crystalBall);
-        }
+    private async runOnce(_fire: number, _water: number, _resources: OptResources, instance: number, _earth?: number ): Promise<[number|null, number|null]>{
+        const resources = _resources(this.name, instance);
+        resources.put("%", _fire);
+        resources.put("$", _water);
+        if(_earth)
+            resources.put("~", _earth);
 
         let skipping = false;
         for(const line of this.lines){
@@ -216,20 +213,20 @@ export class Spell{
     }
 
     async runBasic(_fire: number, _water: number, _resources: OptResources): Promise<number|null>{
-        const [air] = await this.runOnce(_fire, _water, _resources);
+        const instance = Math.random();
+        const [air] = await this.runOnce(_fire, _water, _resources, instance);
         return air;
     }
 
     async runRecursive(_fire: number, _water: number, _resources:OptResources, _earth?: number): Promise<number|null>{
-        const thread = _resources.nodeThread ? _resources.nodeThread : new NodeThread();
+        const instance = Math.random(); 
         let earth: number = _earth ? _earth : 0;
         let air: number | null = earth;
-        const actualResources: OptResources = {..._resources, nodeThread: thread};
         while(true){
             if(earth <= 0){
                 break;
             }
-            const out = await this.runOnce(_fire, _water, actualResources);
+            const out = await this.runOnce(_fire, _water, _resources, instance);
             earth = out[1] ? out[1] : 0;
             air = out[0];
         }
