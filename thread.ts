@@ -1,6 +1,6 @@
 import { Deque } from "./deque/deque.ts";
 import { Explosion } from "./explosion.ts";
-export class ThreadRunes {
+export class NodeThread {
   private nodeThread: Deque<number> = new Deque<number>();
   constructor() {}
 
