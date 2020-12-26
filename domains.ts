@@ -92,7 +92,7 @@ export class Domains {
      * Sets node energy from domain. (Or if realm, voids it.)
      * @param symbol domain or realm rune
      */
-    update(symbol: string, value: number) {
+    update(symbol: string, value: number | null) {
         switch (symbol) {
             case "%":
                 this.fire = value;
