@@ -1,10 +1,16 @@
-import { Domains } from "./domains.ts";
 import { Explosion } from "./explosion.ts";
-import { NodeThread } from "./thread.ts";
+import { Resource } from "./resources/base.ts";
+import { NodeThread } from "./resources/node-thread.ts";
+import { ResourceManager } from "./resources/resource-manager.ts";
 
 export enum KINDS {
     BASIC,
     RECURSIVE
+}
+
+export interface OptResources {
+    nodeThread?: NodeThread;
+    crystalBall: Resource;
 }
 
 export class Spell{
@@ -24,9 +30,14 @@ export class Spell{
         }
     }
 
-    private runOnce(_fire: number, _water: number, _earth?: number, _thread?: NodeThread): [number|null, number|null]{
-        const domains = new Domains(_fire, _water, _earth);
-        const thread = _thread ? _thread : new NodeThread();
+    private async runOnce(_fire: number, _water: number, _resources: OptResources, _earth?: number ): Promise<[number|null, number|null]>{
+        const resources = new ResourceManager(_fire, _water, _earth);
+        const thread = _resources.nodeThread ? _resources.nodeThread : new NodeThread();
+        resources.addResource("<", thread.left())
+        resources.addResource(">", thread.right())
+        if(_resources.crystalBall){
+            resources.addResource("?", _resources.crystalBall);
+        }
 
         let skipping = false;
         for(const line of this.lines){
@@ -34,35 +45,16 @@ export class Spell{
                 skipping = false;
                 continue;
             }
-            if(line.length == 2){
-                // Thread Stuff
-                if(line[0] == "<"){
-                   domains.update(line[1], thread.LeftArrowX());
-                    continue;
-                }
-                if(line[0] == ">"){
-                    thread.RightArrowX(domains.take(line[1]));
-                    continue;
-                }
-                if(line[1] == "<"){
-                    thread.XLeftArrow(domains.take(line[0]));
-                    continue;
-                }
-                if(line[1] == ">"){
-                    domains.update(line[0], thread.XRightArrow());
-                    continue;
-                }
-                // End Thread Stuff
-            } else if(line.length == 3) {
+            if(line.length == 3) {
                 // Move
                 if(line[1] == "^"){
-                    domains.update(line[2], domains.take(line[0]));
+                    resources.put(line[2], await resources.take(line[0]));
                     continue;
                 }
                 // If
                 if(line[2] == "="){
                     // This might be take, but I'm treating it as a check.
-                    if(domains.check(line[0]) == domains.check(line[1])){
+                    if(await resources.check(line[0]) == await resources.check(line[1])){
                         skipping = false;
                     } else {
                         skipping = true;
@@ -72,23 +64,23 @@ export class Spell{
             } else if(line.length == 4) {
                 // Clone
                 if(line[1] == "&"){
-                    const x = domains.take(line[0]);
-                    domains.update(line[2], x);
-                    domains.update(line[3], x);
+                    const x = await resources.take(line[0]);
+                    resources.put(line[2], x);
+                    resources.put(line[3], x);
                     continue;
                 }
                 // Plus
                 if(line[2] == "+"){
-                    const x = domains.take(line[0]);
-                    const y = domains.take(line[1]);
-                    domains.update(line[3], (x + y));
+                    const x = await resources.take(line[0]);
+                    const y = await resources.take(line[1]);
+                    resources.put(line[3], (x + y));
                     continue;
                 }
                 // Minus
                 if(line[2] == "-"){
-                    const x = domains.take(line[0]);
-                    const y = domains.take(line[1]);
-                    domains.update(line[3], (x - y));
+                    const x = await resources.take(line[0]);
+                    const y = await resources.take(line[1]);
+                    resources.put(line[3], (x - y));
                     continue;
                 }
             } else {
@@ -102,15 +94,18 @@ export class Spell{
                     if(callee.kind != call.kind){
                         throw new Explosion(`Wrong kind of spell!`);
                     }
-                    const L = call.L ? domains.take(call.L) : undefined;
-                    //const air = this.spells.get(call.spell)?.run(domains.take(call.N), domains.take(call.M), L);
-                    const air = callee.run(domains.take(call.N), domains.take(call.M), L, thread);
-                    domains.update(call.Q, air);
+                    const L = call.L ? await resources.take(call.L) : undefined;
+                    const passedResources: OptResources = {
+                        crystalBall: _resources.crystalBall,
+                        //nodeThread: thread, // Not passing this currently.
+                    };
+                    const air = await callee.run(await resources.take(call.N), await resources.take(call.M), passedResources,  L);
+                    resources.put(call.Q, air);
                 }
             }
             throw new Explosion("The following line of the spell was miss scribed! \n" + line);
         }
-        return [domains.air, domains.earth];
+        return [await resources.take("!"), await resources.take("~")];
     }
 
     private parseSpellCall(call: string) {
@@ -176,32 +171,33 @@ export class Spell{
         return {kind, spell, N, M, Q, L};
     }
 
-    run(_fire: number, _water: number, _earth?: number, _thread?: NodeThread): number|null{
+    async run(_fire: number, _water: number, _resources:OptResources, _earth?: number): Promise<number|null>{
         let air;
         if(this.kind == KINDS.BASIC){
-            air = this.runBasic(_fire, _water, _thread);
+            air = await this.runBasic(_fire, _water, _resources);
         } else if(this.kind == KINDS.RECURSIVE){
-            air = this.runRecursive(_fire, _water, _earth, _thread);
+            air = await this.runRecursive(_fire, _water, _resources, _earth);
         } else {
             throw new Explosion("Explosion trying to run code... This should be impossible.")
         }
         return air;
     }
 
-    runBasic(_fire: number, _water: number, _thread?: NodeThread): number|null{
-        const [air] = this.runOnce(_fire, _water, undefined, _thread);
+    async runBasic(_fire: number, _water: number, _resources: OptResources): Promise<number|null>{
+        const [air] = await this.runOnce(_fire, _water, _resources);
         return air;
     }
 
-    runRecursive(_fire: number, _water: number, _earth?: number, _thread?: NodeThread): number|null{
-        const thread = _thread ? _thread : new NodeThread();
+    async runRecursive(_fire: number, _water: number, _resources:OptResources, _earth?: number): Promise<number|null>{
+        const thread = _resources.nodeThread ? _resources.nodeThread : new NodeThread();
         let earth: number = _earth ? _earth : 0;
         let air: number | null = earth;
+        const actualResources: OptResources = {..._resources, nodeThread: thread};
         while(true){
             if(earth <= 0){
                 break;
             }
-            const out = this.runOnce(_fire, _water, earth, _thread);
+            const out = await this.runOnce(_fire, _water, actualResources);
             earth = out[1] ? out[1] : 0;
             air = out[0];
         }
