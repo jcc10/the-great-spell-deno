@@ -1,0 +1,1 @@
+SOURCED FROM: https://github.com/blakeembrey/deque
